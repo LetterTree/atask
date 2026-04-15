@@ -1,0 +1,674 @@
+# atask V1 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 构建 `atask` V1 的最小可用闭环，包括 `/.project.atask` 真源、CLI 写操作、状态流转校验、树形视图、清理逻辑，以及支撑“必须使用 CLI”的 skill 约束基础。
+
+**Architecture:** 采用单文件 JSON 真源 `/.project.atask`，通过本地 CLI 统一执行主任务/子任务创建、状态流转、校验和展示。实现上优先拆分为 schema、存储、任务树操作、命令层、测试层几个清晰模块，避免把规则散落在命令分支里。CLI 作为唯一常规写入口，后续 GUI 仅读取同一真源并复用同一套校验逻辑。
+
+**Tech Stack:** Python 3、标准库 `argparse` / `json` / `pathlib` / `datetime`、`pytest`、可选 `pyproject.toml`
+
+---
+
+## 1. 目标文件结构
+
+本计划假设当前仓库为空起步。建议第一版目录结构如下：
+
+- `atask/`
+  - `__init__.py`
+  - `cli.py`
+  - `schema.py`
+  - `store.py`
+  - `tree_ops.py`
+  - `validators.py`
+  - `formatters.py`
+  - `errors.py`
+- `tests/`
+  - `test_cli_init.py`
+  - `test_cli_add.py`
+  - `test_cli_status.py`
+  - `test_cli_tree.py`
+  - `test_cli_validate.py`
+  - `test_cli_prune.py`
+  - `conftest.py`
+- `pyproject.toml`
+- `README.mdc`
+
+各文件职责：
+
+- `atask/cli.py`: 命令行入口与参数解析
+- `atask/schema.py`: `/.project.atask` 的默认结构与 schema 级常量
+- `atask/store.py`: 真源文件读写、路径解析、时间写入
+- `atask/tree_ops.py`: 主任务/子任务查询、新增、父子遍历等纯数据操作
+- `atask/validators.py`: 状态流转、唯一性、删除资格、父任务完成约束等规则
+- `atask/formatters.py`: `tree` 输出格式化
+- `atask/errors.py`: 统一错误类型与消息映射
+- `tests/*`: CLI 行为测试，优先从用户视角覆盖
+- `README.mdc`: 最小使用说明，避免后续只靠 spec 推断
+
+## 2. 总体策略
+
+实现顺序遵守以下原则：
+
+- 先定路径和真源结构，再做命令
+- 先用测试锁死规则，再写最小实现
+- 先做 `init/add/start/done/tree/validate` 主路径，再补 `block/cancel/prune`
+- 先支持“按计划落库”，不做自动计划解析
+- 每完成一组闭环命令就跑对应测试
+
+## 3. 任务拆解
+
+### Task 1: 建立项目骨架与测试入口
+
+**Files:**
+- Create: `pyproject.toml`
+- Create: `atask/__init__.py`
+- Create: `atask/cli.py`
+- Create: `tests/conftest.py`
+- Create: `README.mdc`
+
+- [ ] **Step 1: 创建最小 `pyproject.toml`**
+
+写入：
+
+```toml
+[project]
+name = "atask"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[project.scripts]
+atask = "atask.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+```
+
+- [ ] **Step 2: 创建包入口文件**
+
+创建 `atask/__init__.py`，先只放版本占位：
+
+```python
+__all__ = ["__version__"]
+__version__ = "0.1.0"
+```
+
+- [ ] **Step 3: 创建 CLI 空入口**
+
+创建 `atask/cli.py`：
+
+```python
+def main() -> int:
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+- [ ] **Step 4: 创建测试基座**
+
+在 `tests/conftest.py` 中提供：
+
+- 临时工作目录 fixture
+- 调用 CLI 的辅助函数
+- 读取 `/.project.atask` 的辅助函数
+
+- [ ] **Step 5: 创建最小 README**
+
+说明：
+
+- 这是 `atask` V1 CLI
+- 真源文件路径为 `/.project.atask`
+- 当前只支持单工程单文件模型
+
+- [ ] **Step 6: 运行基础测试框架**
+
+Run: `pytest -q`
+
+Expected:
+
+- 测试框架能启动
+- 当前没有测试或空测试通过
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add pyproject.toml atask/__init__.py atask/cli.py tests/conftest.py README.mdc
+git commit -m "<><>init atask project skeleton"
+```
+
+### Task 2: 实现真源 schema 与文件存储
+
+**Files:**
+- Create: `atask/schema.py`
+- Create: `atask/store.py`
+- Create: `tests/test_cli_init.py`
+- Modify: `atask/cli.py`
+
+- [ ] **Step 1: 写 `init` 失败测试**
+
+在 `tests/test_cli_init.py` 中覆盖：
+
+- `atask init` 会创建 `/.project.atask`
+- 再次执行 `init` 会拒绝覆盖
+
+测试示例：
+
+```python
+def test_init_creates_project_file(run_cli, tmp_path):
+    result = run_cli("init")
+    assert result.returncode == 0
+    assert (tmp_path / ".project.atask").exists()
+
+
+def test_init_refuses_existing_file(run_cli, tmp_path):
+    run_cli("init")
+    result = run_cli("init")
+    assert result.returncode != 0
+```
+
+- [ ] **Step 2: 运行测试确认失败**
+
+Run: `pytest tests/test_cli_init.py -q`
+
+Expected: FAIL，因为 `init` 还未实现
+
+- [ ] **Step 3: 实现 schema 默认结构**
+
+在 `atask/schema.py` 中定义：
+
+- 真源文件名常量
+- schema 版本
+- 默认项目对象生成函数
+- 合法状态集合
+
+最小接口示例：
+
+```python
+PROJECT_FILE = ".project.atask"
+VALID_STATES = {"todo", "doing", "blocked", "done", "cancelled"}
+
+
+def new_project(title: str) -> dict:
+    return {"ver": 1, "title": title, "tasks": []}
+```
+
+- [ ] **Step 4: 实现文件存储**
+
+在 `atask/store.py` 中实现：
+
+- 根目录真源路径解析
+- UTF-8 JSON 读写
+- 不覆盖已有文件的创建逻辑
+
+- [ ] **Step 5: 在 CLI 中实现 `init`**
+
+行为：
+
+- 支持可选 `--title`
+- 默认标题取当前目录名
+- 成功返回 0
+- 文件已存在时返回非 0 并输出清晰错误
+
+- [ ] **Step 6: 运行测试确认通过**
+
+Run: `pytest tests/test_cli_init.py -q`
+
+Expected: PASS
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add atask/schema.py atask/store.py atask/cli.py tests/test_cli_init.py
+git commit -m "<><>feat add project file init command"
+```
+
+### Task 3: 实现任务树纯数据操作
+
+**Files:**
+- Create: `atask/tree_ops.py`
+- Create: `atask/errors.py`
+- Create: `tests/test_cli_add.py`
+- Modify: `atask/store.py`
+- Modify: `atask/cli.py`
+
+- [ ] **Step 1: 写 `add` 失败测试**
+
+测试应覆盖：
+
+- 新增主任务
+- 新增子任务
+- 新增多层级子任务
+- 重复 `task-key` 报错
+- 重复子任务 `id` 报错
+- 对 `done/cancelled` 父节点新增子任务时报错
+
+- [ ] **Step 2: 运行测试确认失败**
+
+Run: `pytest tests/test_cli_add.py -q`
+
+Expected: FAIL
+
+- [ ] **Step 3: 定义统一错误类型**
+
+在 `atask/errors.py` 中定义：
+
+- `AtaskError`
+- `ValidationError`
+- `NotFoundError`
+- `ConflictError`
+
+- [ ] **Step 4: 实现任务树查询与新增操作**
+
+在 `atask/tree_ops.py` 中实现纯函数：
+
+- 查找主任务 by `key`
+- 查找任意任务节点 by `id`
+- 向根新增主任务
+- 向主任务新增子任务
+- 向指定父节点新增子任务
+- 递归遍历子任务
+
+注意：
+
+- 逻辑尽量无副作用或限定在传入对象上
+- 不在这里做命令行打印
+
+- [ ] **Step 5: 在 CLI 中接入 `add` 命令**
+
+命令规则：
+
+- 新增主任务：`--task-key --title --desc`
+- 新增子任务：`--task --id --title --desc`
+- 新增孙任务：额外传 `--parent`
+
+- [ ] **Step 6: 为 `add` 增加必要校验**
+
+包括：
+
+- 主任务 `key` 唯一
+- 子任务 `id` 在所属主任务范围内唯一
+- 父节点存在
+- 父节点状态不为 `done/cancelled`
+
+- [ ] **Step 7: 运行测试确认通过**
+
+Run: `pytest tests/test_cli_add.py -q`
+
+Expected: PASS
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add atask/tree_ops.py atask/errors.py atask/store.py atask/cli.py tests/test_cli_add.py
+git commit -m "<><>feat add task tree creation commands"
+```
+
+### Task 4: 实现状态流转与完成约束
+
+**Files:**
+- Create: `atask/validators.py`
+- Create: `tests/test_cli_status.py`
+- Modify: `atask/tree_ops.py`
+- Modify: `atask/cli.py`
+
+- [ ] **Step 1: 写状态流转失败测试**
+
+测试覆盖：
+
+- `start` 允许 `todo -> doing`
+- `done` 允许 `doing -> done`
+- `block` 允许 `doing -> blocked`
+- `cancel` 允许 `doing -> cancelled`
+- `blocked -> doing`
+- 拒绝 `todo -> done`
+- 拒绝 `done -> doing`
+
+- [ ] **Step 2: 增加父任务完成约束测试**
+
+测试覆盖：
+
+- 有未完成子任务时，父任务 `done` 失败
+- 所有子任务 `done/cancelled` 后，父任务 `done` 成功
+
+- [ ] **Step 3: 运行测试确认失败**
+
+Run: `pytest tests/test_cli_status.py -q`
+
+Expected: FAIL
+
+- [ ] **Step 4: 实现状态流转校验函数**
+
+在 `atask/validators.py` 中实现：
+
+- `validate_transition`
+- `can_mark_done`
+- `is_finished_state`
+
+示例：
+
+```python
+def is_finished_state(state: str) -> bool:
+    return state in {"done", "cancelled"}
+```
+
+- [ ] **Step 5: 在任务树层实现状态写入**
+
+实现：
+
+- 更新指定节点状态
+- `done` 时写 `dt`
+- 非 `done` 时保持或清空 `dt` 的明确规则
+
+建议：
+
+- 仅 `done` 写入 `dt`
+- 其他状态不主动写入 `dt`
+
+- [ ] **Step 6: 在 CLI 中实现 `start/done/block/cancel`**
+
+命令示例：
+
+```bash
+atask start --task cli-core --id t1
+atask done --task cli-core --id t1
+atask block --task cli-core --id t1
+atask cancel --task cli-core --id t1
+```
+
+- [ ] **Step 7: 运行测试确认通过**
+
+Run: `pytest tests/test_cli_status.py -q`
+
+Expected: PASS
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add atask/validators.py atask/tree_ops.py atask/cli.py tests/test_cli_status.py
+git commit -m "<><>feat add task status transitions"
+```
+
+### Task 5: 实现树形展示
+
+**Files:**
+- Create: `atask/formatters.py`
+- Create: `tests/test_cli_tree.py`
+- Modify: `atask/cli.py`
+
+- [ ] **Step 1: 写 `tree` 输出测试**
+
+测试覆盖：
+
+- 能展示主任务 `key`
+- 能展示子任务 `id`
+- 能展示状态与标题
+- 多层级有缩进
+
+- [ ] **Step 2: 运行测试确认失败**
+
+Run: `pytest tests/test_cli_tree.py -q`
+
+Expected: FAIL
+
+- [ ] **Step 3: 实现树形格式化函数**
+
+在 `atask/formatters.py` 中实现：
+
+- 主任务格式化
+- 子任务递归格式化
+- 统一状态前缀，例如 `[doing]`
+
+建议输出形态：
+
+```text
+[todo] cli-core CLI 核心能力
+  [doing] t1 实现 init 命令
+  [todo] t2 输出任务树视图
+    [todo] t2.1 渲染缩进树结构
+```
+
+- [ ] **Step 4: 在 CLI 中实现 `tree` 命令**
+
+行为：
+
+- 读取 `/.project.atask`
+- 输出完整树
+- 真源不存在时给出友好错误
+
+- [ ] **Step 5: 运行测试确认通过**
+
+Run: `pytest tests/test_cli_tree.py -q`
+
+Expected: PASS
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add atask/formatters.py atask/cli.py tests/test_cli_tree.py
+git commit -m "<><>feat add task tree display"
+```
+
+### Task 6: 实现整体校验命令
+
+**Files:**
+- Create: `tests/test_cli_validate.py`
+- Modify: `atask/validators.py`
+- Modify: `atask/cli.py`
+
+- [ ] **Step 1: 写 `validate` 失败测试**
+
+测试覆盖：
+
+- 正常真源返回成功
+- 非法状态报错
+- 重复主任务 `key` 报错
+- 重复子任务 `id` 报错
+- 父任务提前完成报错
+
+- [ ] **Step 2: 运行测试确认失败**
+
+Run: `pytest tests/test_cli_validate.py -q`
+
+Expected: FAIL
+
+- [ ] **Step 3: 实现全量验证逻辑**
+
+在 `atask/validators.py` 中增加：
+
+- 项目级结构检查
+- 主任务唯一性检查
+- 子任务 ID 唯一性检查
+- 状态值检查
+- 父任务完成约束检查
+
+- [ ] **Step 4: 在 CLI 中实现 `validate` 命令**
+
+行为：
+
+- 校验通过返回 0
+- 校验失败返回非 0
+- 输出第一条或全部错误，选一种并保持一致
+
+建议 V1：
+
+- 输出全部错误，便于一次修完
+
+- [ ] **Step 5: 运行测试确认通过**
+
+Run: `pytest tests/test_cli_validate.py -q`
+
+Expected: PASS
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add atask/validators.py atask/cli.py tests/test_cli_validate.py
+git commit -m "<><>feat add project validation command"
+```
+
+### Task 7: 实现历史完成任务清理
+
+**Files:**
+- Create: `tests/test_cli_prune.py`
+- Modify: `atask/tree_ops.py`
+- Modify: `atask/cli.py`
+- Modify: `atask/validators.py`
+
+- [ ] **Step 1: 写 `prune` 失败测试**
+
+测试覆盖：
+
+- `done` 且超过 14 天的任务会被清理
+- `done` 但未超过 14 天的不清理
+- 非 `done` 状态不清理
+- 默认 dry-run 不写回文件
+
+- [ ] **Step 2: 运行测试确认失败**
+
+Run: `pytest tests/test_cli_prune.py -q`
+
+Expected: FAIL
+
+- [ ] **Step 3: 实现可清理性判断**
+
+在 `atask/validators.py` 中实现：
+
+- `is_prunable(task, now)`
+
+- [ ] **Step 4: 实现任务树清理逻辑**
+
+在 `atask/tree_ops.py` 中实现：
+
+- 遍历并返回可删除任务
+- dry-run 模式只汇总
+- 真执行模式删除满足条件节点
+
+- [ ] **Step 5: 在 CLI 中实现 `prune`**
+
+建议命令：
+
+```bash
+atask prune
+atask prune --apply
+```
+
+行为：
+
+- 默认 dry-run
+- `--apply` 才真正写回
+
+- [ ] **Step 6: 运行测试确认通过**
+
+Run: `pytest tests/test_cli_prune.py -q`
+
+Expected: PASS
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add atask/tree_ops.py atask/validators.py atask/cli.py tests/test_cli_prune.py
+git commit -m "<><>feat add completed task prune command"
+```
+
+### Task 8: 完善 README 与手工验证脚本
+
+**Files:**
+- Modify: `README.mdc`
+
+- [ ] **Step 1: 补充 README 使用示例**
+
+需要覆盖：
+
+- `atask init`
+- 主任务创建
+- 子任务创建
+- 状态流转
+- 树视图
+- 校验
+- 清理
+
+- [ ] **Step 2: 补充计划层约束说明**
+
+写明：
+
+- 主任务 `key` 必须在计划阶段定义
+- 子任务 `id` 必须在计划阶段定义
+- 日常写操作必须走 CLI
+
+- [ ] **Step 3: 手工跑一遍最小闭环**
+
+Run:
+
+```bash
+atask init --title "ctask"
+atask add --task-key cli-core --title "CLI 核心能力" --desc "实现基础命令"
+atask add --task cli-core --id t1 --title "实现 init 命令" --desc "创建项目真源"
+atask start --task cli-core --id t1
+atask done --task cli-core --id t1
+atask tree
+atask validate
+```
+
+Expected:
+
+- 所有命令成功
+- `tree` 输出当前任务层级和状态
+- `validate` 返回通过
+
+- [ ] **Step 4: 跑完整测试集**
+
+Run: `pytest -q`
+
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add README.mdc
+git commit -m "<><>docs add atask usage guide"
+```
+
+## 4. 额外实现注意事项
+
+- 错误消息必须直接、短、可操作，不要堆栈式废话
+- 所有 JSON 读写统一使用 UTF-8
+- 不要在第一版引入第三方 schema 库，标准库足够
+- `validate` 和命令内校验逻辑要尽量共用，避免规则分叉
+- 所有状态字符串和文件名常量集中管理
+- 任务树递归逻辑要写成可测试纯函数，CLI 只做胶水层
+
+## 5. 测试策略
+
+优先使用 CLI 级测试，而不是只测内部函数。  
+原因是这个系统的核心目标是“强制流程”，不是“单个函数算对了”。
+
+至少保证：
+
+- 每个命令都有成功路径测试
+- 每个关键约束都有失败路径测试
+- `validate` 能发现手工构造的脏数据
+- `prune` 的 dry-run 和 apply 分开验证
+
+## 6. 执行建议
+
+推荐执行顺序：
+
+1. Task 1-2，先跑通项目骨架和真源文件
+2. Task 3-4，建立主路径：创建任务与状态流转
+3. Task 5-6，补齐查看和校验
+4. Task 7，最后做清理逻辑
+5. Task 8，补 README 和手工冒烟验证
+
+## 7. 暂不纳入本计划
+
+以下内容属于后续计划，不放进当前 V1 实施：
+
+- 计划文档自动解析
+- plan -> atask 自动同步
+- GUI 看板
+- owner / 锁机制
+- 多工程聚合
+- Shell 补全
+- 更复杂的筛选与查询命令

@@ -1,0 +1,15 @@
+{
+  "name": "@lettertree/atask-win32-x64",
+  "version": "0.1.0",
+  "description": "atask binary for Windows x64",
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "bin": {
+    "atask": "bin/atask.exe"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LetterTree/atask"
+  }
+}

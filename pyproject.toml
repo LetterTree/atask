@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "atask"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[project.scripts]
+atask = "atask.cli:main"
+
+[project.optional-dependencies]
+build = ["pyinstaller"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
