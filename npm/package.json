@@ -1,5 +1,5 @@
 {
-  "name": "atask",
+  "name": "@lettertree/atask",
   "version": "0.1.0",
   "description": "Lightweight task tracking CLI for AI agents. No Python required.",
   "license": "MIT",

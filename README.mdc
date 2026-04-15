@@ -13,7 +13,7 @@ Lightweight task tracking CLI for AI agents. Single-file JSON truth source at `.
 ### npm（推荐，无需 Python）
 
 ```bash
-npm install -g atask
+npm install -g @lettertree/atask
 ```
 
 支持平台：Linux x64、macOS x64、Windows x64。
