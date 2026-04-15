@@ -32,7 +32,7 @@ jobs:
 
       - name: Build binary
         shell: bash
-        run: sh npm/scripts/build.sh --platform ${{ matrix.platform }}
+        run: bash npm/scripts/build.sh --platform ${{ matrix.platform }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
