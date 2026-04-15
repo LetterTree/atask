@@ -1,6 +1,6 @@
 {
   "name": "@lettertree/atask-linux-x64",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "atask binary for Linux x64",
   "os": ["linux"],
   "cpu": ["x64"],

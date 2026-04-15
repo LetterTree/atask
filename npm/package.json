@@ -1,6 +1,6 @@
 {
   "name": "@lettertree/atask",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Lightweight task tracking CLI for AI agents. No Python required.",
   "license": "MIT",
   "repository": {
@@ -11,9 +11,9 @@
     "atask": "bin/atask.js"
   },
   "optionalDependencies": {
-    "@lettertree/atask-linux-x64": "0.1.0",
-    "@lettertree/atask-darwin-x64": "0.1.0",
-    "@lettertree/atask-win32-x64": "0.1.0"
+    "@lettertree/atask-linux-x64": "0.1.2",
+    "@lettertree/atask-darwin-x64": "0.1.2",
+    "@lettertree/atask-win32-x64": "0.1.2"
   },
   "engines": {
     "node": ">=14"
