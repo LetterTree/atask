@@ -33,7 +33,7 @@ jobs:
 
       - name: Install dependencies (non-Linux)
         if: matrix.use_docker == false
-        run: pip install pyinstaller
+        run: pip install pyinstaller --retries 5 --timeout 60
 
       - name: Build binary (non-Linux)
         if: matrix.use_docker == false
@@ -46,7 +46,7 @@ jobs:
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -w /workspace \
-            quay.io/pypa/manylinux2014_x86_64 \
+            quay.io/pypa/manylinux_2_28_x86_64 \
             bash -c "
               /opt/python/cp311-cp311/bin/pip install pyinstaller &&
               /opt/python/cp311-cp311/bin/pyinstaller npm/atask.spec \
