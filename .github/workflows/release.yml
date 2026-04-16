@@ -35,21 +35,26 @@ jobs:
         if: matrix.use_docker == false
         run: pip install pyinstaller --retries 5 --timeout 60
 
+      - name: Disable Windows Defender real-time monitoring
+        if: matrix.platform == 'win32'
+        shell: powershell
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
+
       - name: Build binary (non-Linux)
         if: matrix.use_docker == false
         shell: bash
         run: bash npm/scripts/build.sh --platform ${{ matrix.platform }}
 
-      - name: Build binary (Linux via manylinux Docker)
+      - name: Build binary (Linux via Docker)
         if: matrix.use_docker == true
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -w /workspace \
-            quay.io/pypa/manylinux_2_28_x86_64 \
+            python:3.11-slim-buster \
             bash -c "
-              /opt/python/cp311-cp311/bin/pip install pyinstaller &&
-              /opt/python/cp311-cp311/bin/pyinstaller npm/atask.spec \
+              pip install pyinstaller &&
+              pyinstaller npm/atask.spec \
                 --distpath npm/packages/atask-linux-x64/bin \
                 --workpath /tmp/atask-build \
                 --noconfirm
