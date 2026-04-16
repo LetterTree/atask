@@ -53,6 +53,7 @@ jobs:
             -w /workspace \
             python:3.11-slim-buster \
             bash -c "
+              apt-get update -qq && apt-get install -y -q binutils &&
               pip install pyinstaller &&
               pyinstaller npm/atask.spec \
                 --distpath npm/packages/atask-linux-x64/bin \
