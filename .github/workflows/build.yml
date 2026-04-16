@@ -53,6 +53,7 @@ jobs:
             -w /workspace \
             python:3.11-slim-buster \
             bash -c "
+              sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list &&
               apt-get update -qq && apt-get install -y -q binutils &&
               pip install pyinstaller &&
               pyinstaller npm/atask.spec \
